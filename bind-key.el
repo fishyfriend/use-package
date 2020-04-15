@@ -210,12 +210,12 @@ See `bind-key' for more details."
   "Similar to `bind-key', but overrides any mode-specific bindings."
   `(bind-key ,key-name ,command override-global-map ,predicate))
 
-(defun bind-keys-form (args keymap)
+(defun bind-keys-form (args keymaps)
   "Bind multiple keys at once.
 
 Accepts keyword arguments:
 :map MAP               - a keymap into which the keybindings should be
-                         added
+                         added, or a list of such keymaps
 :prefix KEY            - prefix key for these bindings
 :prefix-map MAP        - name of the prefix map that should be created
                          for these bindings
@@ -225,7 +225,7 @@ Accepts keyword arguments:
 
 The rest of the arguments are conses of keybinding string and a
 function symbol (unquoted)."
-  (let (map
+  (let (maps
         doc
         prefix-map
         prefix
@@ -238,12 +238,15 @@ function symbol (unquoted)."
       (while (and cont args)
         (if (cond ((and (eq :map (car args))
                         (not prefix-map))
-                   (setq map (cadr args)))
+                   (setq maps
+                         (if (listp (cadr args))
+                             (cadr args)
+                           (list (cadr args)))))
                   ((eq :prefix-docstring (car args))
                    (setq doc (cadr args)))
                   ((and (eq :prefix-map (car args))
-                        (not (memq map '(global-map
-                                         override-global-map))))
+                        (not (memq 'global-map maps))
+                        (not (memq 'override-global-map maps)))
                    (setq prefix-map (cadr args)))
                   ((eq :prefix (car args))
                    (setq prefix (cadr args)))
@@ -263,7 +266,7 @@ function symbol (unquoted)."
     (when (and menu-name (not prefix))
       (error "If :menu-name is supplied, :prefix must be too"))
 
-    (unless map (setq map keymap))
+    (unless maps (setq maps (or keymaps (list nil))))
 
     ;; Process key binding arguments
     (let (first next)
@@ -277,7 +280,7 @@ function symbol (unquoted)."
             (setq first (list (car args))))
           (setq args (cdr args))))
 
-      (cl-flet
+      (cl-labels
           ((wrap (map bindings)
                  (if (and map pkg (not (memq map '(global-map
                                                    override-global-map))))
@@ -286,32 +289,48 @@ function symbol (unquoted)."
                          (eval-after-load
                              ,(if (symbolp pkg) `',pkg pkg)
                            ',(macroexp-progn bindings))))
-                   bindings)))
+                   bindings))
+           (prefix-setup ()
+                         (when prefix-map
+                           `((defvar ,prefix-map)
+                             ,@(when doc
+                                 `((put ',prefix-map 'variable-documentation ,doc)))
+                             ,@(if menu-name
+                                   `((define-prefix-command ',prefix-map
+                                       nil
+                                       ,menu-name))
+                                 `((define-prefix-command ',prefix-map))))))
+           (prefix-binding (map)
+                           (when prefix-map
+                             (if (and map (not (eq map 'global-map)))
+                                 (wrap map `((bind-key ,prefix
+                                                       ',prefix-map
+                                                       ,map
+                                                       ,filter)))
+                               `((bind-key ,prefix ',prefix-map nil ,filter)))))
+           (bindings (map arg)
+                     (cl-mapcan
+                      (lambda (form)
+                        (let ((fun (and (cdr form)
+                                        (list 'function (cdr form)))))
+                          (if prefix-map
+                              `((bind-key ,(car form) ,fun ,prefix-map ,filter))
+                            (if (and map (not (eq map 'global-map)))
+                                `((bind-key ,(car form) ,fun ,map ,filter))
+                              `((bind-key ,(car form) ,fun nil ,filter))))))
+                      arg)))
 
-        (append
-         (when prefix-map
-           `((defvar ,prefix-map)
-             ,@(when doc `((put ',prefix-map 'variable-documentation ,doc)))
-             ,@(if menu-name
-                   `((define-prefix-command ',prefix-map nil ,menu-name))
-                 `((define-prefix-command ',prefix-map)))
-             ,@(if (and map (not (eq map 'global-map)))
-                   (wrap map `((bind-key ,prefix ',prefix-map ,map ,filter)))
-                 `((bind-key ,prefix ',prefix-map nil ,filter)))))
-         (wrap map
-               (cl-mapcan
-                (lambda (form)
-                  (let ((fun (and (cdr form) (list 'function (cdr form)))))
-                    (if prefix-map
-                        `((bind-key ,(car form) ,fun ,prefix-map ,filter))
-                      (if (and map (not (eq map 'global-map)))
-                          `((bind-key ,(car form) ,fun ,map ,filter))
-                        `((bind-key ,(car form) ,fun nil ,filter))))))
-                first))
-         (when next
-           (bind-keys-form (if pkg
-                               (cons :package (cons pkg next))
-                             next) map)))))))
+        (append (prefix-setup)
+                (cl-mapcan
+                 (lambda (map)
+                   (append (prefix-binding map)
+                           (wrap map (bindings map first))))
+                 maps)
+                (when next
+                  (bind-keys-form (if pkg
+                                      (cons :package (cons pkg next))
+                                    next)
+                                  maps)))))))
 
 ;;;###autoload
 (defmacro bind-keys (&rest args)
@@ -319,7 +338,7 @@ function symbol (unquoted)."
 
 Accepts keyword arguments:
 :map MAP               - a keymap into which the keybindings should be
-                         added
+                         added, or a list of such keymaps
 :prefix KEY            - prefix key for these bindings
 :prefix-map MAP        - name of the prefix map that should be created
                          for these bindings
@@ -333,7 +352,7 @@ function symbol (unquoted)."
 
 ;;;###autoload
 (defmacro bind-keys* (&rest args)
-  (macroexp-progn (bind-keys-form args 'override-global-map)))
+  (macroexp-progn (bind-keys-form args '(override-global-map))))
 
 (defun get-binding-description (elem)
   (cond

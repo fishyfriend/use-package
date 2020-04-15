@@ -89,7 +89,8 @@ deferred until the prefix key sequence is pressed."
          ;;   :filter SEXP
          ;;   :menu-name STRING
          ;;   :package SYMBOL
-         ((or (and (eq x :map) (symbolp (cadr arg)))
+         ((or (and (eq x :map) (or (symbolp (cadr arg))
+                                   (listp (cadr arg))))
               (and (eq x :prefix) (stringp (cadr arg)))
               (and (eq x :prefix-map) (symbolp (cadr arg)))
               (and (eq x :prefix-docstring) (stringp (cadr arg)))

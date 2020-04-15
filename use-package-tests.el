@@ -1896,14 +1896,40 @@
           (autoload #'nonexistent "nonexistent" nil t))
         (add-hook 'lisp-mode-hook #'nonexistent)))))
 
+(ert-deftest bind-key/:map ()
+  (match-expansion
+   (bind-keys
+    ("C-1" . command-1)
+    ("C-2" . command-2)
+    :map keymap-1
+    ("C-3" . command-3)
+    ("C-4" . command-4)
+    :map (keymap-2 keymap-3)
+    ("C-5" . command-5)
+    ("C-6" . command-6))
+   `(progn (bind-key "C-1" #'command-1 nil nil)
+           (bind-key "C-2" #'command-2 nil nil)
+           (bind-key "C-3" #'command-3 keymap-1 nil)
+           (bind-key "C-4" #'command-4 keymap-1 nil)
+           (bind-key "C-5" #'command-5 keymap-2 nil)
+           (bind-key "C-6" #'command-6 keymap-2 nil)
+           (bind-key "C-5" #'command-5 keymap-3 nil)
+           (bind-key "C-6" #'command-6 keymap-3 nil))))
+
 (ert-deftest bind-key/:prefix-map ()
   (match-expansion
-   (bind-keys :prefix "<f1>"
-              :prefix-map my/map)
+   (bind-keys ("C-1" . command-1)
+              :prefix "<f1>"
+              :prefix-map my/map
+              ("C-2" . command-2)
+              ("C-3" . command-3))
    `(progn
+      (bind-key "C-1" #'command-1 nil nil)
       (defvar my/map)
       (define-prefix-command 'my/map)
-      (bind-key "<f1>" 'my/map nil nil))))
+      (bind-key "<f1>" 'my/map nil nil)
+      (bind-key "C-2" #'command-2 my/map nil)
+      (bind-key "C-3" #'command-3 my/map nil))))
 
 ;; Local Variables:
 ;; indent-tabs-mode: nil

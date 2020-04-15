@@ -35,7 +35,8 @@
   "Bind multiple chords at once.
 
 Accepts keyword argument:
-:map - a keymap into which the keybindings should be added
+:map - a keymap or list of keymaps into which the keybindings should be
+       added
 
 The rest of the arguments are conses of keybinding string and a
 function symbol (unquoted)."
